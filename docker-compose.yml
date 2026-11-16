@@ -1,33 +1,58 @@
+x-collector-common: &collector-common
+  build: .
+  command: ["python", "-m", "app.run"]
+  environment: &collector-env
+    PORT: "8000"
+    # 每个容器恰好一个采集进程；两个容器共同组成“双进程”部署。
+    WEB_WORKERS: "1"
+    CORPUS_DB: /data/corpus.db
+    ENABLE_COLLECTOR: "true"
+    MIN_REQUEST_INTERVAL: "1.05"
+    # 故意使用短租约（1.5 秒）：慢源响应远长于租约时，靠续租保持占用；
+    # 进程退出后租约自然到期，存活进程据此接手，而不是靠加长租约规避。
+    ORIGIN_LEASE_SECONDS: "1.5"
+    RETRY_AFTER_FALLBACK: "2"
+    DEMO_A_URL: http://demo-a:8001
+    DEMO_B_URL: http://demo-b:8001
+    LOG_LEVEL: info
+  volumes:
+    - corpus-data:/data
+  depends_on:
+    demo-a:
+      condition: service_healthy
+    demo-b:
+      condition: service_healthy
+  # 不自动重启：kill 掉一个采集进程后它保持退出，便于观察存活进程接手。
+  restart: "no"
+
 services:
-  app:
-    build: .
-    command: ["python", "-m", "app.run"]
+  collector-a:
+    <<: *collector-common
+    environment:
+      <<: *collector-env
+      WORKER_NAME: collector-a
     ports:
       - "8000:8000"
-    environment:
-      PORT: "8000"
-      WEB_WORKERS: "2"
-      CORPUS_DB: /data/corpus.db
-      ENABLE_COLLECTOR: "true"
-      MIN_REQUEST_INTERVAL: "1.05"
-      RETRY_AFTER_FALLBACK: "2"
-      DEMO_A_URL: http://demo-a:8001
-      DEMO_B_URL: http://demo-b:8001
-      LOG_LEVEL: info
-    volumes:
-      - corpus-data:/data
-    depends_on:
-      demo-a:
-        condition: service_healthy
-      demo-b:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz').read()"]
       interval: 3s
       timeout: 3s
       retries: 20
       start_period: 5s
-    restart: unless-stopped
+
+  collector-b:
+    <<: *collector-common
+    environment:
+      <<: *collector-env
+      WORKER_NAME: collector-b
+    ports:
+      - "8003:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz').read()"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
 
   demo-a:
     build: .

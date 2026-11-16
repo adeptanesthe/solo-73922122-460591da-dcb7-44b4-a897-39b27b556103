@@ -380,10 +380,11 @@ def test_cooldown_on_one_origin_does_not_block_another(demo, tmp_path):
 def test_jsonl_export(repo_factory):
     repo = repo_factory()
     batch_id = repo.create_batch([("http://a:80/x", "http://a:80")])
-    page_id = repo.claim_page(_first_page_id(repo, batch_id), "w")
-    assert page_id is not None
-    assert repo.start_request(page_id["id"])
-    assert repo.save_result(page_id["id"], "标题", "正文\n第二段", 200) == "ok"
+    page = repo.claim_page(_first_page_id(repo, batch_id), "w")
+    assert page is not None
+    token = page["claim_token"]
+    assert repo.start_request(page["id"], token)
+    assert repo.save_result(page["id"], token, "标题", "正文\n第二段", 200) == "ok"
     rows = repo.corpus_rows(batch_id)
     assert [(r["title"], r["body"], r["url"]) for r in rows] == [
         ("标题", "正文\n第二段", "http://a:80/x")

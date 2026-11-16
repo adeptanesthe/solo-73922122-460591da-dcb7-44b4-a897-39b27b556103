@@ -20,7 +20,7 @@ from .config import Settings, get_settings
 from .db import Repository
 from .fetch import normalize_url
 from .governor import OriginGovernor
-from .worker import Worker
+from .worker import Worker, default_dead_after
 
 log = logging.getLogger("collector.api")
 
@@ -62,6 +62,11 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         min_interval=settings.min_interval,
         lease_seconds=settings.lease_seconds,
     )
+    dead_after = (
+        settings.worker_dead_after
+        if settings.worker_dead_after is not None
+        else default_dead_after(settings.lease_seconds)
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -79,6 +84,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 name=settings.worker_name,
                 retry_after_fallback=settings.retry_after_fallback,
                 max_retry_after=settings.max_retry_after,
+                dead_after=dead_after,
             )
             task = asyncio.create_task(worker.run(), name=f"collector:{settings.worker_name}")
             log.info("collector loop started in API process (%s)", settings.worker_name)
@@ -96,6 +102,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.repo = repo
     app.state.governor = governor
+    app.state.worker_dead_after = dead_after
 
     @app.get("/healthz")
     async def healthz() -> dict[str, Any]:
@@ -106,12 +113,23 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         return {
             "max_urls": settings.max_urls,
             "min_request_interval": settings.min_interval,
+            "lease_seconds": settings.lease_seconds,
+            "worker_dead_after": dead_after,
             # Sample URLs for the browser must be reachable by the collector;
             # DEMO_*_URL is set to the compose service names inside Docker.
             "demo_sources": [
                 {"name": "演示源 A", "base": settings.demo_a_url},
                 {"name": "演示源 B", "base": settings.demo_b_url},
             ],
+        }
+
+    @app.get("/api/workers")
+    async def workers() -> dict[str, Any]:
+        """Liveness of every collector process (heartbeat-based)."""
+        return {
+            "workers": repo.live_workers(dead_after),
+            "dead_after": dead_after,
+            "now": time.time(),
         }
 
     @app.post("/api/batches", status_code=201)

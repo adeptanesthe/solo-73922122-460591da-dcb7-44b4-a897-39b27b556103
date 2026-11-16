@@ -162,6 +162,19 @@ code {
 .meta strong { color: var(--text); }
 .source-note { margin-top: 6px; color: var(--warn); font-size: 13px; }
 
+.workers { display: flex; gap: 8px; flex-wrap: wrap; }
+.worker-chip {
+  font-size: 12.5px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--chip);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  font-family: ui-monospace, Menlo, monospace;
+}
+.worker-chip.alive { color: var(--ok); border-color: var(--ok); }
+.worker-chip.dead { color: var(--bad); border-color: var(--bad); }
+
 table.pages { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 table.pages th, table.pages td {
   border-bottom: 1px solid var(--line);
@@ -171,6 +184,7 @@ table.pages th, table.pages td {
 }
 table.pages th { color: var(--muted); font-weight: 600; font-size: 12.5px; }
 table.pages td.url { word-break: break-all; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
+table.pages td.worker { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); white-space: nowrap; }
 table.pages td.reason { color: var(--muted); }
 
 .events { margin: 0; padding-left: 22px; font-size: 13.5px; color: var(--muted); }

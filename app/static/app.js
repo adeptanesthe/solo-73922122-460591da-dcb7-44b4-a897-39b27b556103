@@ -16,6 +16,8 @@
   const cancelBtn = $("cancel-btn");
   const downloadLink = $("download-link");
   const refreshBtn = $("refresh-btn");
+  const workersEl = $("workers");
+  const workersHint = $("workers-hint");
 
   let currentBatch = null;
   let pollTimer = null;
@@ -79,6 +81,9 @@
       const cfg = await api("/api/config");
       maxUrls = cfg.max_urls || 20;
       $("max-urls").textContent = String(maxUrls);
+      if (cfg.lease_seconds && $("lease-hint")) {
+        $("lease-hint").textContent = String(cfg.lease_seconds);
+      }
       urlsInput.placeholder = `http://demo-a:8001/article/alpha\nhttp://demo-b:8001/article/beta`;
       const sources = cfg.demo_sources || [];
       sources.forEach((source, index) => {
@@ -91,10 +96,11 @@
       const b = (sources[1] && sources[1].base) || "";
       const list = [
         `${a}/article/alpha`,
-        `${a}/article/beta?delay=1.5`,
-        `${b}/article/gamma?limit=1&retry_after=3`,
-        `${a}/redirect/delta`,
-        `${b}/no-article/epsilon`,
+        `${a}/article/beta?delay=4`,
+        `${a}/article/gamma?delay=4`,
+        `${b}/article/delta?limit=1&retry_after=3`,
+        `${a}/redirect/epsilon`,
+        `${b}/no-article/zeta`,
         `${a}/article/zeta?fail=500`,
       ];
       list.forEach((url) => {
@@ -115,6 +121,40 @@
     } catch (err) {
       /* config is optional */
     }
+  }
+
+  async function loadWorkers() {
+    try {
+      const data = await api("/api/workers");
+      renderWorkers(data.workers || []);
+    } catch (err) {
+      workersEl.textContent = `加载采集进程失败：${err.message}`;
+    }
+  }
+
+  function renderWorkers(workers) {
+    workersEl.textContent = "";
+    if (!workers.length) {
+      const p = document.createElement("p");
+      p.className = "empty";
+      p.textContent = "暂无采集进程心跳。";
+      workersEl.appendChild(p);
+      workersHint.textContent = "";
+      return;
+    }
+    for (const worker of workers) {
+      const chip = document.createElement("span");
+      chip.className = `worker-chip ${worker.alive ? "alive" : "dead"}`;
+      const lastSeen = worker.last_seen_at
+        ? new Date(worker.last_seen_at * 1000).toLocaleTimeString()
+        : "—";
+      chip.textContent = `${worker.worker_id} · ${worker.alive ? "存活" : "已退出"} · 心跳 ${lastSeen}`;
+      chip.title = worker.alive
+        ? "该进程正在采集"
+        : "该进程已退出；其遗留的 running 页面会被存活进程自动接手";
+      workersEl.appendChild(chip);
+    }
+    workersHint.textContent = `失联超过阈值即被判定退出，遗留页面由存活进程接手`;
   }
 
   async function submit(event) {
@@ -269,11 +309,15 @@
       attempts.textContent =
         String(page.attempts || 0) + (page.retry_count ? `（重试 ${page.retry_count}）` : "");
 
+      const worker = document.createElement("td");
+      worker.className = "worker";
+      worker.textContent = page.worker_id || "—";
+
       const reason = document.createElement("td");
       reason.className = "reason";
       reason.textContent = page.reason || "";
 
-      tr.append(pos, url, status, title, length, attempts, reason);
+      tr.append(pos, url, status, title, length, attempts, worker, reason);
       pagesBody.appendChild(tr);
     }
 
@@ -327,7 +371,9 @@
 
   loadConfig();
   refreshBatches();
+  loadWorkers();
   setInterval(() => {
     if (!currentBatch) refreshBatches();
-  }, 4000);
+    loadWorkers();
+  }, 2000);
 })();

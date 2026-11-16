@@ -112,3 +112,47 @@ def test_readiness_reflects_lease_and_cooldown(db):
     gov.release(slot, now=60.2)
     gov.start_cooldown(ORIGIN, 7, now=60.3)
     assert gov.readiness(ORIGIN, now=60.4) == pytest.approx(67.3)
+
+
+def test_lease_renewal_keeps_slow_request_safe(db):
+    """A response slower than the lease must not be stolen while the holder
+    keeps renewing (the 1.5s lease / 4s response scenario, compressed)."""
+    gov1 = OriginGovernor(db, owner="w1", lease_seconds=10)
+    gov2 = OriginGovernor(db, owner="w2", lease_seconds=10)
+    slot = gov1.try_acquire(ORIGIN, "t1", now=100.0)
+    assert slot is not None
+    # The request is still running past the original lease; renewals hold it.
+    assert gov1.renew(slot, now=108.0) is True
+    assert gov2.try_acquire(ORIGIN, "t2", now=109.0) is None
+    assert gov1.renew(slot, now=116.0) is True
+    assert gov2.try_acquire(ORIGIN, "t3", now=117.0) is None
+    # Once renewals stop (the process is gone), the lease lapses and the
+    # origin can be taken over.
+    assert gov2.try_acquire(ORIGIN, "t4", now=126.5) is not None
+
+
+def test_renew_rejected_after_takeover(db):
+    gov1 = OriginGovernor(db, owner="w1", lease_seconds=10)
+    gov2 = OriginGovernor(db, owner="w2", lease_seconds=10)
+    slot1 = gov1.try_acquire(ORIGIN, "t1", now=100.0)
+    assert slot1 is not None
+    # w1 stalls; its lease lapses and w2 takes the origin.
+    slot2 = gov2.try_acquire(ORIGIN, "t2", now=111.0)
+    assert slot2 is not None
+    # The stalled owner wakes up: it can neither renew nor release.
+    assert gov1.renew(slot1, now=112.0) is False
+    gov1.release(slot1, now=112.1)
+    # w2's slot is untouched by the zombie release.
+    assert gov1.try_acquire(ORIGIN, "t3", now=112.5) is None
+    assert gov2.renew(slot2, now=112.6) is True
+
+
+def test_expired_but_untaken_lease_can_be_renewed(db):
+    """A brief stall that nobody exploited must not kill the request."""
+    gov = OriginGovernor(db, owner="w1", lease_seconds=10)
+    slot = gov.try_acquire(ORIGIN, "t1", now=100.0)
+    assert slot is not None
+    # Lease lapsed at 110, nobody grabbed the origin: renewing is fine.
+    assert gov.renew(slot, now=111.0) is True
+    other = OriginGovernor(db, owner="w2", lease_seconds=10)
+    assert other.try_acquire(ORIGIN, "t2", now=120.5) is None

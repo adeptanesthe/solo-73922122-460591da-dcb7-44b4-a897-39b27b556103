@@ -38,6 +38,16 @@ def _optional_int(name: str) -> int | None:
         return None
 
 
+def _optional_float(name: str) -> float | None:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
 #: Requests to one origin must start at least one second apart.  The extra
 #: 50 ms is a safety margin so scheduler/network jitter can never make two
 #: observed request starts less than one second apart.
@@ -60,6 +70,10 @@ class Settings:
     )
     lease_seconds: float = field(
         default_factory=lambda: _float("ORIGIN_LEASE_SECONDS", 90.0)
+    )
+    #: ``None`` means derive from the lease (see ``worker.default_dead_after``).
+    worker_dead_after: float | None = field(
+        default_factory=lambda: _optional_float("WORKER_DEAD_AFTER")
     )
     retry_after_fallback: int = field(default_factory=lambda: _int("RETRY_AFTER_FALLBACK", 2))
     #: ``None`` means an integer Retry-After is honoured exactly as sent.

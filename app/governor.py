@@ -16,6 +16,12 @@ deadline.  A request slot is claimed in a single ``BEGIN IMMEDIATE``
 transaction, then held until the response body has been read (or the request
 failed), which is what makes requests non-overlapping.  Leases expire after
 ``lease_seconds`` so a crashed worker cannot block an origin forever.
+
+A slot lease is *renewed* by its holder while the request is in flight (see
+:meth:`OriginGovernor.renew`), so a slow but healthy response — even one that
+takes far longer than the lease — is never stolen by the other process.  Only
+a process that actually stops renewing (it exited or stalled) loses its slot
+once the lease lapses.
 """
 
 from __future__ import annotations
@@ -194,6 +200,28 @@ class OriginGovernor:
                 (token, self.owner, lease_until, now + self.min_interval, now, origin),
             )
         return Slot(origin=origin, token=token, owner=self.owner, started_at=now)
+
+    def renew(self, slot: Slot, now: float | None = None) -> bool:
+        """Extend the lease of a slot this process still holds.
+
+        Called periodically while a request is in flight so a slow response
+        outliving ``lease_seconds`` is not treated as a crashed worker.  The
+        renewal only succeeds while the row still carries this slot's token:
+        once the lease lapsed and another process took the origin over, the
+        token has moved on and ``False`` tells the caller its slot is gone
+        (it must stop touching the origin and must not release anything).
+
+        Renewing an *expired but untaken* lease is allowed — a brief stall
+        that nobody exploited is harmless.
+        """
+        with self._immediate() as conn:
+            now = time.time() if now is None else now
+            updated = conn.execute(
+                "UPDATE origin_gate SET lease_until = ?"
+                " WHERE origin = ? AND lease_token = ?",
+                (now + self.lease_seconds, slot.origin, slot.token),
+            ).rowcount
+            return bool(updated)
 
     def mark_dispatched(self, slot: Slot, now: float | None = None) -> bool:
         """Anchor the origin's next slot at the real request dispatch time.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -107,12 +108,12 @@ def test_jsonl_download_only_contains_successful_pages(client, tmp_path):
     pages = client.get(f"/api/batches/{batch_id}").json()["pages"]
     first = repo.claim_page(pages[0]["id"], "test")
     assert first
-    repo.start_request(first["id"])
-    assert repo.save_result(first["id"], "标题一", "正文一", 200) == "ok"
+    repo.start_request(first["id"], first["claim_token"])
+    assert repo.save_result(first["id"], first["claim_token"], "标题一", "正文一", 200) == "ok"
     second = repo.claim_page(pages[1]["id"], "test")
     assert second
-    repo.start_request(second["id"])
-    repo.save_failure(second["id"], "http_error", "源站返回 HTTP 500", 500)
+    repo.start_request(second["id"], second["claim_token"])
+    repo.save_failure(second["id"], second["claim_token"], "http_error", "源站返回 HTTP 500", 500)
 
     resp = client.get(f"/api/batches/{batch_id}/corpus.jsonl")
     assert resp.status_code == 200
@@ -129,10 +130,10 @@ def test_cancelled_batch_jsonl_is_empty(client):
     repo = client.app.state.repo
     batch_id = repo.create_batch([("http://a:80/one", "http://a:80")])
     page = client.get(f"/api/batches/{batch_id}").json()["pages"][0]
-    repo.claim_page(page["id"], "test")
-    repo.start_request(page["id"])
+    claimed = repo.claim_page(page["id"], "test")
+    repo.start_request(page["id"], claimed["claim_token"])
     client.post(f"/api/batches/{batch_id}/cancel")
-    assert repo.save_result(page["id"], "迟到标题", "迟到正文", 200) == "cancelled"
+    assert repo.save_result(page["id"], claimed["claim_token"], "迟到标题", "迟到正文", 200) == "cancelled"
     resp = client.get(f"/api/batches/{batch_id}/corpus.jsonl")
     assert resp.text == ""
 
@@ -155,3 +156,15 @@ def test_index_page_served(client):
     resp = client.get("/")
     assert resp.status_code == 200
     assert "文章语料采集器" in resp.text
+
+
+def test_workers_endpoint_reports_liveness(client):
+    repo = client.app.state.repo
+    repo.worker_heartbeat("collector-live")
+    repo.worker_heartbeat("collector-dead", now=time.time() - 3600)
+
+    data = client.get("/api/workers").json()
+    workers = {w["worker_id"]: w for w in data["workers"]}
+    assert workers["collector-live"]["alive"] is True
+    assert workers["collector-dead"]["alive"] is False
+    assert data["dead_after"] > 0
