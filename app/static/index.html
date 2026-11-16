@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>文章语料采集器</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>文章语料采集器</h1>
+    <p class="sub">提交文章 URL（单批最多 <span id="max-urls">20</span> 个），逐页查看状态，下载 JSONL 语料。</p>
+  </header>
+
+  <main>
+    <section class="panel submit-panel">
+      <h2>提交采集批次</h2>
+      <form id="submit-form">
+        <label for="urls">文章 URL（每行一个）</label>
+        <textarea id="urls" name="urls" rows="7" spellcheck="false"
+          placeholder="http://demo-a:8001/article/alpha&#10;http://demo-b:8001/article/beta"></textarea>
+        <div class="row">
+          <button type="submit" id="submit-btn">开始采集</button>
+          <span id="submit-hint" class="hint">只采集给定 URL，不跟随重定向。</span>
+        </div>
+        <div id="form-error" class="error" hidden></div>
+      </form>
+
+      <div class="demo-help">
+        <h3>演示源示例</h3>
+        <p>演示源 A：<code id="demo-a-base"></code>，演示源 B：<code id="demo-b-base"></code></p>
+        <ul id="demo-samples"></ul>
+        <p class="hint">参数说明：<code>delay=1.5</code> 模拟慢源；<code>fail=500</code> 固定失败；
+          <code>limit=2&amp;retry_after=3</code> 前 2 次返回 429（Retry-After 整数秒，暂停该源全部批次）。</p>
+        <p>演示源请求记录：<a id="demo-a-log" href="/api/demo/a/requests" target="_blank">源 A</a>
+          · <a id="demo-b-log" href="/api/demo/b/requests" target="_blank">源 B</a></p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="row space-between">
+        <h2>批次</h2>
+        <button type="button" class="ghost" id="refresh-btn">刷新</button>
+      </div>
+      <div id="batches" class="batches"><p class="empty">还没有批次。</p></div>
+    </section>
+
+    <section class="panel" id="detail-panel" hidden>
+      <div class="row space-between">
+        <h2>批次详情 <code id="detail-id"></code></h2>
+        <div class="row">
+          <a id="download-link" class="button" href="#" download>下载 JSONL</a>
+          <button type="button" class="danger" id="cancel-btn">取消批次</button>
+        </div>
+      </div>
+      <div id="detail-meta" class="meta"></div>
+      <table class="pages">
+        <thead>
+          <tr>
+            <th>#</th><th>URL</th><th>状态</th><th>标题</th><th>正文长度</th>
+            <th>尝试</th><th>说明</th>
+          </tr>
+        </thead>
+        <tbody id="pages-body"></tbody>
+      </table>
+      <h3>事件</h3>
+      <ol id="events" class="events"></ol>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+"""Local demonstration news sources."""
